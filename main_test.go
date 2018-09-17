@@ -23,9 +23,10 @@ func TestCrawlerStart(t *testing.T) {
 }
 
 func TestFetch(t *testing.T) {
+	BODY :="<a href=\"https://foobar.com\" />"
 	testServer := httptest.NewServer(http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		res.WriteHeader(200)
-		res.Write([]byte("<a href=\"https://varunpant.com\" />"))
+		res.Write([]byte(BODY))
 	}))
 
 	defer func() { testServer.Close() }()
@@ -33,36 +34,36 @@ func TestFetch(t *testing.T) {
 	crawler := webCrawler{testServer.URL, 2, 0.5}
 	bodyBytes, err := crawler.fetch(testServer.URL)
 	assert.NoError(t, err)
-	assert.Equal(t, 30, len(bodyBytes))
+	assert.Equal(t, BODY, string(bodyBytes[:]))
 
 }
 
 func TestExtractLinksReturnsSameHost(t *testing.T) {
-	rootURL, _ := url.Parse("https://varunpant.com/")
+	rootURL, _ := url.Parse("https://foobar.com/")
 	{
 
-		body := []byte("<a href=\"https://varunpant.com/ \" />")
+		body := []byte("<a href=\"https://foobar.com/ \" />")
 		links, err := extractLinks(body, rootURL)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(links))
 	}
 }
 func TestExtractLinksIgrnoresWrongHost(t *testing.T) {
-	rootURL, _ := url.Parse("https://varunpant.com/")
+	rootURL, _ := url.Parse("https://foobar.com/")
 	{
-		body := []byte("<a href=\"https://web.varunpant.com/ \" />")
+		body := []byte("<a href=\"https://web.foobar.com/ \" />")
 		links, err := extractLinks(body, rootURL)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, len(links))
 	}
 }
 func TestExtractLinksHandlesRelativeLinks(t *testing.T) {
-	rootURL, _ := url.Parse("https://varunpant.com/")
+	rootURL, _ := url.Parse("https://foobar.com/")
 	{
 		body := []byte("<a href=\"/foo\" />")
 		links, err := extractLinks(body, rootURL)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, len(links))
-		assert.Equal(t, "https://varunpant.com/foo", links[0])
+		assert.Equal(t, "https://foobar.com/foo", links[0])
 	}
 }

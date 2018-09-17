@@ -53,59 +53,94 @@ func (w *webCrawler) start() error {
 	tobecrawled := make(chan []string)
 
 	//unvisited urls
-	unique := make(chan string)
+	unvisited := make(chan string)
 
 	//sitemap of links.
 	sitemap := make(map[string][]string)
+
+	//stop signal
+	stop := make(chan struct{})
+
+	var wg sync.WaitGroup
 	var mutex = &sync.Mutex{}
+
 	t := time.Now()
+
+	//Seed
 	go func() { tobecrawled <- []string{w.root} }()
 
 	for i := 0; i < w.concurrency; i++ {
-
+		wg.Add(1)
 		//create concurrent workers
 		go func() {
-			//this is a blocking call for workers till the main goroutine exists.
-			for link := range unique {
 
-				links, err := w.crawl(link, rootURL)
-				if err != nil {
-					continue
+			for {
+				select {
+				case link := <-unvisited:
+					{
+						links, err := w.crawl(link, rootURL)
+						if err != nil {
+							continue
+						}
+						mutex.Lock()
+						sitemap[link] = links
+						t = time.Now()
+						mutex.Unlock()
+
+						if len(links) > 0 {
+							go func() {
+								wg.Add(1)
+								defer  wg.Done()
+								tobecrawled <- links }()
+						}
+					}
+
+				case <-stop:
+					log.Println("Exiting worker...")
+					defer wg.Done()
+					return
 				}
-				mutex.Lock()
-				sitemap[link] = links
-				t = time.Now()
-				mutex.Unlock()
-
-				if len(links) > 0 {
-					go func() { tobecrawled <- links }()
-				}
-
 			}
 		}()
 	}
 	go func(delay float64) {
 		for {
 			time.Sleep(time.Duration(1))
-			if time.Now().Sub(t).Seconds() >= delay {
+			mutex.Lock()
+			T := t
+			mutex.Unlock()
+			//If no activity in the sitemap insertion detected, then we must be done.
+			if time.Now().Sub(T).Seconds() >= delay {
+				//kill all workers
+				close(stop)
+				wg.Wait()
+				//kill workinglist channel
 				close(tobecrawled)
-				break
+				return
 			}
 
 		}
 
 	}(w.delay)
+
 	//Links already visited.
-	crawled := make(map[string]bool)
+	visited := make(map[string]bool)
 	for list := range tobecrawled {
 		for _, link := range list {
-			if !crawled[link] {
-				crawled[link] = true
-				unique <- link
+			if !visited[link] {
+				visited[link] = true
+				unvisited <- link
 			}
 		}
 	}
 
+	printSitemapHTML(sitemap)
+
+	log.Println("finito...")
+	return nil
+}
+
+func printSitemapHTML(sitemap map[string][]string) {
 	markup := "<html><head><link rel=\"stylesheet\" href=\"https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css\" ></head><body><table class=\"table table-hover table-condensed\">"
 	for key, links := range sitemap {
 		markup += "<tr><td>" + key + "</td><td><ul>"
@@ -116,9 +151,6 @@ func (w *webCrawler) start() error {
 	}
 	markup += "</table></body></html>"
 	ioutil.WriteFile("sitemap.html", []byte(markup), 0644)
-
-	log.Println("finito...")
-	return nil
 }
 
 func (w *webCrawler) crawl(link string, rootURL *url.URL) ([]string, error) {
