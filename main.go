@@ -233,8 +233,8 @@ func main() {
 
 	log.Println("starting...")
 
-	base := "https://varunpant.com/"
-	crawler := webCrawler{base, 10, 3}
+	base := "https://example.com/"
+	crawler := webCrawler{base, 5, 3}
 	crawler.start()
 
 }
